@@ -1,8 +1,8 @@
 import os
+import re
 from io import BytesIO
 import requests
 from flask import Flask, request, send_file, jsonify
-from bs4 import BeautifulSoup
 from PIL import Image
 
 app = Flask(__name__)
@@ -22,37 +22,50 @@ def download():
     if "slideshare.net" in url:
         try:
             page_response = requests.get(url, headers=HEADERS, timeout=30)
-            soup = BeautifulSoup(page_response.content, 'html.parser')
             
-            # SlideShare ki images nikalne ka naya smart logic
+            # Agar SlideShare humara code block kar raha hai
+            if page_response.status_code != 200:
+                return jsonify({"error": f"SlideShare ne request block kar di. Status: {page_response.status_code}. Server blocked."}), 400
+
+            html_text = page_response.text
+            
+            # Regex se poore page (HTML + JSON + Scripts) me se sabhi image URLs nikalna
+            raw_urls = re.findall(r'(https?://[^"\'\s>,\\]+\.(?:jpg|jpeg|png|webp))', html_text)
+            
             image_urls = []
-            
-            # SlideShare commonly in tags me image chupata hai
-            for img in soup.find_all(['img', 'source']):
-                # Har possible attribute check karein jisme link ho sakta hai
-                possible_srcs = [
-                    img.get('data-full'), 
-                    img.get('data-normal'), 
-                    img.get('srcset'), 
-                    img.get('src'), 
-                    img.get('content')
-                ]
+            for src in raw_urls:
+                # JSON me slashes (\/) escape hote hain, unhe fix karna
+                src = src.replace('\\/', '/') 
                 
-                for src in possible_srcs:
-                    if src and isinstance(src, str) and "slidesharecdn.com" in src.lower():
-                        # Agar srcset me multiple links hain, toh sabse high quality nikalna
-                        best_img_url = src.split(',')[-1].split(' ')[0].strip()
-                        
-                        # Sirf image files ko hi allow karein
-                        if best_img_url not in image_urls and any(ext in best_img_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                            image_urls.append(best_img_url)
-                        break # Ek tag se ek hi best link chahiye
+                # Sirf original slideshare images chahiye (profile/logo nahi)
+                if "slidesharecdn.com" in src and "profile" not in src:
+                    if src not in image_urls:
+                        image_urls.append(src)
 
             if not image_urls:
-                return jsonify({"error": "Slide images HTML mein nahi mil payin. Website structure change ho gaya hoga."}), 400
+                return jsonify({"error": "Slide images code mein kahin nahi mil payin. Regex search failed."}), 400
 
-            slide_images = []
+            # Duplicate slides filter karna (hamesha high quality / 1024 ya 2048 wali rakhna)
+            unique_slides = {}
             for img_url in image_urls:
+                # Slide ke naam se unique key banana
+                parts = img_url.split('-')
+                if len(parts) > 1:
+                    key = '-'.join(parts[:-1]) 
+                    # Nayi achi quality wali image se replace karna
+                    if key not in unique_slides or "2048" in img_url or "1024" in img_url:
+                        unique_slides[key] = img_url
+                else:
+                    unique_slides[img_url] = img_url
+                    
+            final_image_urls = list(unique_slides.values())
+            
+            # Sort kar lete hain taaki slides line se aayen
+            final_image_urls.sort()
+
+            # Sabhi slides download karke PDF banana
+            slide_images = []
+            for img_url in final_image_urls:
                 img_data = requests.get(img_url, headers=HEADERS).content
                 img_obj = Image.open(BytesIO(img_data)).convert('RGB')
                 slide_images.append(img_obj)
