@@ -1,5 +1,4 @@
 Flask
 requests
-gunicorn
-beautifulsoup4
 Pillow
+gunicorn
