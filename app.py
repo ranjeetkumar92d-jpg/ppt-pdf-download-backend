@@ -10,7 +10,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 @app.route("/")
 def home():
-    return "Backend is working!"
+    return "Backend is working perfectly!"
 
 @app.route("/download")
 def download():
@@ -18,49 +18,40 @@ def download():
     if not url:
         return jsonify({"error": "URL is missing"}), 400
 
-    # ===== SLIDESHARE LOGIC =====
+    # ===== SLIDESHARE SCRAPING LOGIC =====
     if "slideshare.net" in url:
         try:
             page_response = requests.get(url, headers=HEADERS, timeout=30)
             
-            # Agar SlideShare humara code block kar raha hai
             if page_response.status_code != 200:
-                return jsonify({"error": f"SlideShare ne request block kar di. Status: {page_response.status_code}. Server blocked."}), 400
+                return jsonify({"error": f"SlideShare blocked the request. Status: {page_response.status_code}"}), 400
 
             html_text = page_response.text
             
-            # Regex se poore page (HTML + JSON + Scripts) me se sabhi image URLs nikalna
+            # Regex se images nikalna
             raw_urls = re.findall(r'(https?://[^"\'\s>,\\]+\.(?:jpg|jpeg|png|webp))', html_text)
             
             image_urls = []
             for src in raw_urls:
-                # JSON me slashes (\/) escape hote hain, unhe fix karna
                 src = src.replace('\\/', '/') 
-                
-                # Sirf original slideshare images chahiye (profile/logo nahi)
                 if "slidesharecdn.com" in src and "profile" not in src:
                     if src not in image_urls:
                         image_urls.append(src)
 
             if not image_urls:
-                return jsonify({"error": "Slide images code mein kahin nahi mil payin. Regex search failed."}), 400
+                return jsonify({"error": "Slide images code mein nahi mil payin. Regex search failed."}), 400
 
-            # Duplicate slides filter karna (hamesha high quality / 1024 ya 2048 wali rakhna)
             unique_slides = {}
             for img_url in image_urls:
-                # Slide ke naam se unique key banana
                 parts = img_url.split('-')
                 if len(parts) > 1:
                     key = '-'.join(parts[:-1]) 
-                    # Nayi achi quality wali image se replace karna
                     if key not in unique_slides or "2048" in img_url or "1024" in img_url:
                         unique_slides[key] = img_url
                 else:
                     unique_slides[img_url] = img_url
                     
             final_image_urls = list(unique_slides.values())
-            
-            # Sort kar lete hain taaki slides line se aayen
             final_image_urls.sort()
 
             # Sabhi slides download karke PDF banana
@@ -79,7 +70,7 @@ def download():
                 pdf_bytes, 
                 mimetype="application/pdf", 
                 as_attachment=True, 
-                download_name="slideshare_presentation.pdf"
+                download_name="SlideShare_Presentation.pdf"
             )
 
         except Exception as e:
@@ -95,11 +86,9 @@ def download():
         content_type = response.headers.get("Content-Type", "").split(";")[0].lower()
         
         if content_type == "application/pdf":
-            return send_file(BytesIO(response.content), mimetype="application/pdf", as_attachment=True, download_name="download.pdf")
-        if content_type == "application/vnd.ms-powerpoint":
-            return send_file(BytesIO(response.content), mimetype=content_type, as_attachment=True, download_name="download.ppt")
-        if content_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-            return send_file(BytesIO(response.content), mimetype=content_type, as_attachment=True, download_name="download.pptx")
+            return send_file(BytesIO(response.content), mimetype="application/pdf", as_attachment=True, download_name="document.pdf")
+        if content_type in ["application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]:
+            return send_file(BytesIO(response.content), mimetype=content_type, as_attachment=True, download_name="presentation.pptx")
         
         return jsonify({"error": "This URL is not a direct PDF, PPT or PPTX file."}), 400
 
