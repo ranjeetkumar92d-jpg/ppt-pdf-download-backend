@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from PIL import Image
 
 app = Flask(__name__)
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
 
 @app.route("/")
 def home():
@@ -24,15 +24,29 @@ def download():
             page_response = requests.get(url, headers=HEADERS, timeout=30)
             soup = BeautifulSoup(page_response.content, 'html.parser')
             
-            images_tags = soup.find_all('img') 
-            
+            # SlideShare ki images nikalne ka naya smart logic
             image_urls = []
-            for img in images_tags:
-                src = img.get('srcset') or img.get('src')
-                if src and "slide" in src.lower() and ("jpg" in src.lower() or "png" in src.lower()):
-                    best_img_url = src.split(',')[-1].split(' ')[0] if ',' in src else src
-                    if best_img_url not in image_urls:
-                        image_urls.append(best_img_url)
+            
+            # SlideShare commonly in tags me image chupata hai
+            for img in soup.find_all(['img', 'source']):
+                # Har possible attribute check karein jisme link ho sakta hai
+                possible_srcs = [
+                    img.get('data-full'), 
+                    img.get('data-normal'), 
+                    img.get('srcset'), 
+                    img.get('src'), 
+                    img.get('content')
+                ]
+                
+                for src in possible_srcs:
+                    if src and isinstance(src, str) and "slidesharecdn.com" in src.lower():
+                        # Agar srcset me multiple links hain, toh sabse high quality nikalna
+                        best_img_url = src.split(',')[-1].split(' ')[0].strip()
+                        
+                        # Sirf image files ko hi allow karein
+                        if best_img_url not in image_urls and any(ext in best_img_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                            image_urls.append(best_img_url)
+                        break # Ek tag se ek hi best link chahiye
 
             if not image_urls:
                 return jsonify({"error": "Slide images HTML mein nahi mil payin. Website structure change ho gaya hoga."}), 400
