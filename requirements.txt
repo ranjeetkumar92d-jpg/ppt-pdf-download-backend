@@ -1,5 +1,3 @@
-flask
-flask-cors
+Flask
 requests
-beautifulsoup4
-python-pptx
+gunicorn
